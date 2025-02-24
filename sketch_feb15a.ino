@@ -44,7 +44,7 @@ Two sleep modes:
    Use TCP instead of UDP to report water level, as UDP over ESP32 is not reliable. -- No longer report water level to Raspberry Pi, running remote command on chip.
 */
 
-#define DEBUG 1
+#define DEBUG 0
 
 uint8_t loop_period_sec = 1;
 uint8_t max_sec_between_logs = 10;
@@ -62,6 +62,7 @@ UniversalTelegramBot *bot = nullptr;
 // LED flash: WiFi activitiy or SD card logging activitiy
 #define LED_PIN 5  
 #define SD_CS 4
+#define WARN_PIN 15
 
 
 // RTC Memory allows keeping variables after deep sleep
@@ -73,6 +74,7 @@ RTC_DATA_ATTR uint32_t last_pump_op_time_in_loops = 0;
 RTC_DATA_ATTR uint64_t loops_since_last_log = 0;
 RTC_DATA_ATTR uint64_t loops_since_last_comm = 0;
 RTC_DATA_ATTR uint64_t loops_since_last_ntp = 0;
+RTC_DATA_ATTR bool warning_mesg_sent = false;
 
 uint64_t loop_period_us;
 uint8_t wifi_on = 0; // 1: wifi turned on, 0: wifi is off
@@ -90,15 +92,19 @@ char timeString[30];
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);  // Set LED pin as output
+  pinMode(LED_PIN, OUTPUT);  // Set LED pin as output  
   digitalWrite(LED_PIN, HIGH); // HIGH-> OFF  LOW-> ON  
 
   pinMode(32, OUTPUT);
-  pinMode(33, INPUT_PULLDOWN);
-  pinMode(25, INPUT_PULLDOWN);
-  pinMode(26, INPUT_PULLDOWN);
-  pinMode(27, INPUT_PULLDOWN);
-  pinMode(14, INPUT_PULLDOWN);  
+  digitalWrite(32, LOW);
+  pinMode(33, INPUT_PULLUP);
+  pinMode(25, INPUT_PULLUP);
+  pinMode(26, INPUT_PULLUP);
+  pinMode(27, INPUT_PULLUP);
+  pinMode(14, INPUT_PULLUP);  
+
+  pinMode(WARN_PIN, OUTPUT);  // warning when set high drive buzzer etc.
+  digitalWrite(WARN_PIN, LOW);
   
   // Initialize SD card
   pinMode(SD_CS, OUTPUT);
@@ -135,7 +141,7 @@ void loop() {
   Serial.print("\n\n\n Last Water Level: "); Serial.print(last_water_level);
   Serial.print("\t New Water Level: ");  Serial.println(curr_water_level);      
   Serial.flush();
-#endif
+#endif  
   check_pump_operation();
 
   // Task 2: log the water level, if needed
@@ -160,6 +166,20 @@ void loop() {
     sync_rtc();
   }else{
     loops_since_last_ntp++;
+  }
+
+  // Task 5: Alarm ?
+  if (curr_water_level >= 4){
+    if (warning_mesg_sent){
+      // warning message already sent, will not repeatly send
+    }else{
+      warning_mesg_sent = sendTelegramMessage("WARNING : water level reached %d !!!", curr_water_level);
+    }
+    digitalWrite(WARN_PIN, HIGH);
+  }else{
+    // clear the warning flag, so new warning message will be sent when the level rise to critical again
+    warning_mesg_sent = false;
+    digitalWrite(WARN_PIN, LOW);
   }
 
   // Finally, update last_water_level variable
@@ -236,19 +256,19 @@ int8_t read_water_level() {
   IO13 (JP1 pin 13)     Nil
   */
   int8_t lvl = 0;
-  digitalWrite(32, HIGH);
-  if (digitalRead(14)){
+  // digitalWrite(32, LOW);
+  if (!digitalRead(14)){
     lvl = 5;
-  }else if (digitalRead(27)){
+  }else if (!digitalRead(27)){
     lvl = 4;
-  }else if (digitalRead(26)){
+  }else if (!digitalRead(26)){
     lvl = 3;
-  }else if (digitalRead(25)){
+  }else if (!digitalRead(25)){
     lvl = 2;
-  }else if (digitalRead(33)){
+  }else if (!digitalRead(33)){
     lvl = 1;
   }  
-  digitalWrite(32, LOW);
+  // digitalWrite(32, LOW);
 
   return lvl;
 }
@@ -329,7 +349,7 @@ void handle_comm(){
               }
           }
           else if (text == "uptime"){
-            sendTelegramMessage("Up %d days %02d:%02d:%2d since boot", 
+            sendTelegramMessage("Up %d days %02d:%02d:%02d since boot", 
                   (loops_since_boot * loop_period_sec / 3600 / 24),
                   (loops_since_boot * loop_period_sec/ 3600) % 24, (loops_since_boot * loop_period_sec/ 60) % 60, (loops_since_boot * loop_period_sec) % 60                  
                 );              
