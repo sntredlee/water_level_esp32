@@ -44,7 +44,7 @@ Two sleep modes:
    Use TCP instead of UDP to report water level, as UDP over ESP32 is not reliable. -- No longer report water level to Raspberry Pi, running remote command on chip.
 */
 
-#define DEBUG 0
+#define DEBUG 1
 
 uint8_t loop_period_sec = 1;
 uint8_t max_sec_between_logs = 10;
