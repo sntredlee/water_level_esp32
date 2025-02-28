@@ -7,6 +7,7 @@
 #include "time.h"
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
+#include "esp_system.h"  // Required for reset reason
 
 /*
 Note about telegram:
@@ -60,7 +61,7 @@ WiFiClientSecure secure_client;
 UniversalTelegramBot *bot = nullptr;
 
 // LED flash: WiFi activitiy or SD card logging activitiy
-#define LED_PIN 5  
+#define LED_PIN 5
 #define SD_CS 4
 #define WARN_PIN 15
 
@@ -77,23 +78,47 @@ RTC_DATA_ATTR uint64_t loops_since_last_ntp = 0;
 RTC_DATA_ATTR bool warning_mesg_sent = false;
 
 uint64_t loop_period_us;
-uint8_t wifi_on = 0; // 1: wifi turned on, 0: wifi is off
+uint8_t wifi_on = 0;  // 1: wifi turned on, 0: wifi is off
 uint8_t sd_card_ok = 0;
 
 // **NTP Server for RTC Sync**
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 36000 + 3600;  // Adjust for your timezone (e.g., -18000 for EST)
-const long  daylightOffset_sec = 3600;
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 36000 + 3600;  // Adjust for your timezone (e.g., -18000 for EST)
+const long daylightOffset_sec = 3600;
 // **Initialize RTC Time**
 struct tm timeinfo;
 // **Format the timestamp**
 char timeString[30];
 
 
+const char *getResetReasonString(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_UNKNOWN: return "Unknown Reset";
+    case ESP_RST_POWERON: return "Power-On Reset";
+    case ESP_RST_EXT: return "External Pin Reset";
+    case ESP_RST_SW: return "Software Reset";
+    case ESP_RST_PANIC: return "Panic Reset (Exception)";
+    case ESP_RST_INT_WDT: return "Interrupt Watchdog Reset";
+    case ESP_RST_TASK_WDT: return "Task Watchdog Reset";
+    case ESP_RST_WDT: return "Watchdog Reset";
+    case ESP_RST_DEEPSLEEP: return "Wakeup from Deep Sleep";
+    case ESP_RST_BROWNOUT: return "Brownout Reset (Low Power)";
+    case ESP_RST_SDIO: return "SDIO Reset";
+    default: return "Unknown Reset Reason";
+  }
+}
+
+
+
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);  // Set LED pin as output  
-  digitalWrite(LED_PIN, HIGH); // HIGH-> OFF  LOW-> ON  
+
+  esp_reset_reason_t reason = esp_reset_reason();
+  Serial.print("Last reset reason: ");
+  Serial.println(reason);
+
+  pinMode(LED_PIN, OUTPUT);     // Set LED pin as output
+  digitalWrite(LED_PIN, HIGH);  // HIGH-> OFF  LOW-> ON
 
   pinMode(32, OUTPUT);
   digitalWrite(32, LOW);
@@ -101,19 +126,19 @@ void setup() {
   pinMode(25, INPUT_PULLUP);
   pinMode(26, INPUT_PULLUP);
   pinMode(27, INPUT_PULLUP);
-  pinMode(14, INPUT_PULLUP);  
+  pinMode(14, INPUT_PULLUP);
 
   pinMode(WARN_PIN, OUTPUT);  // warning when set high drive buzzer etc.
   digitalWrite(WARN_PIN, LOW);
-  
+
   // Initialize SD card
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH);
-  if (!SD.begin(SD_CS)){
+  if (!SD.begin(SD_CS)) {
     sd_card_ok = 0;
     Serial.println("Card Mount Failed!");
     Serial.flush();
-  }else{
+  } else {
     sd_card_ok = 1;
     Serial.println("SD Card Initialized.");
     Serial.flush();
@@ -121,62 +146,64 @@ void setup() {
   }
 
   loop_period_us = loop_period_sec * 1000000;
-  
+
   // **Initialize RTC from NTP**
   sync_rtc();
 
   // secure_client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
   secure_client.setInsecure();
   bot = new UniversalTelegramBot(telegram_botToken.c_str(), secure_client);
-  sendTelegramMessage("Hello! I am online.");
+  sendTelegramMessage("I am online. Last Reset Reason: %s", getResetReasonString(reason));
 }
 
 
-void loop() {  
+void loop() {
   uint64_t ts_loop_start = esp_timer_get_time();
-  
+
   // Task 1: read latest water level
   curr_water_level = read_water_level();
-#if DEBUG  
-  Serial.print("\n\n\n Last Water Level: "); Serial.print(last_water_level);
-  Serial.print("\t New Water Level: ");  Serial.println(curr_water_level);      
+#if DEBUG
+  Serial.print("\n\n\n Last Water Level: ");
+  Serial.print(last_water_level);
+  Serial.print("\t New Water Level: ");
+  Serial.println(curr_water_level);
   Serial.flush();
-#endif  
+#endif
   check_pump_operation();
 
   // Task 2: log the water level, if needed
   if ((curr_water_level != last_water_level) || (loops_since_last_log > max_sec_between_logs / loop_period_sec)) {
     loops_since_last_log = 0;
     log_water_level(curr_water_level);
-  }else{
+  } else {
     loops_since_last_log++;
   }
-  
+
   // Task 3: get online for remote command handling
   if (loops_since_last_comm > max_sec_between_comm / loop_period_sec) {
     loops_since_last_comm = 0;
     handle_comm();
-  }else{
+  } else {
     loops_since_last_comm++;
   }
-  
+
   // Task 4: NTP
-  if (loops_since_last_ntp > max_sec_between_ntp / loop_period_sec){
+  if (loops_since_last_ntp > max_sec_between_ntp / loop_period_sec) {
     loops_since_last_ntp = 0;
     sync_rtc();
-  }else{
+  } else {
     loops_since_last_ntp++;
   }
 
   // Task 5: Alarm ?
-  if (curr_water_level >= 4){
-    if (warning_mesg_sent){
+  if (curr_water_level >= 4) {
+    if (warning_mesg_sent) {
       // warning message already sent, will not repeatly send
-    }else{
+    } else {
       warning_mesg_sent = sendTelegramMessage("WARNING : water level reached %d !!!", curr_water_level);
     }
     digitalWrite(WARN_PIN, HIGH);
-  }else{
+  } else {
     // clear the warning flag, so new warning message will be sent when the level rise to critical again
     warning_mesg_sent = false;
     digitalWrite(WARN_PIN, LOW);
@@ -186,60 +213,64 @@ void loop() {
   last_water_level = curr_water_level;
   loops_since_boot++;
 
-  // Prepare to go to sleep  
+  // Prepare to go to sleep
   uint64_t loop_cost_us = esp_timer_get_time() - ts_loop_start;
 
-#if DEBUG  
+#if DEBUG
   Serial.print("Loop time (us): ");
   Serial.println(loop_cost_us);
   Serial.flush();
 #endif
 
-  if (loop_cost_us >= loop_period_us){
+  if (loop_cost_us >= loop_period_us) {
     // This loop takes too long, no sleep, go to next loop immediately
     // delay(1 ms) is called for the backend to do something.
     delay(1);
-   }else{
+  } else {
     // light sleep is more power efficient because we need to wake up frequently and the power cost of rebooting (150ms @ 200mA) is much more
     turn_off_wifi();
-  #if DEBUG  
+#if DEBUG
     Serial.print("go to light sleep mode...");
     Serial.flush();
-  #endif
+#endif
     esp_sleep_enable_timer_wakeup(loop_period_us - loop_cost_us);
     esp_light_sleep_start();
-   }
+  }
 }
 
-void check_pump_operation(){
-  if (curr_water_level >= last_water_level){    
-    loops_since_last_2to1 += 1;    
+void check_pump_operation() {
+  if (curr_water_level >= last_water_level) {
+    loops_since_last_2to1 += 1;
     return;
   }
-  if ((curr_water_level==1) && (last_water_level==2)){
+  if ((curr_water_level == 1) && (last_water_level == 2)) {
     // Level 2 -> 1
     loops_since_last_2to1 = 0;
-  }else if ((curr_water_level==0) && (last_water_level==1)){    
+  } else if ((curr_water_level == 0) && (last_water_level == 1)) {
     // Level 1 -> 0
     last_pump_op_time_in_loops = loops_since_last_2to1;
   }
 }
 
-void sync_rtc(){
-  if (!wifi_on){
+void sync_rtc() {
+  if (!wifi_on) {
     turn_on_wifi();
   }
-  if (!wifi_on){    
+  if (!wifi_on) {
     return;
   }
+
+  // esp_task_wdt_reset();
+  vTaskDelay(1);
+
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-#if DEBUG  
+#if DEBUG
   if (!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");      
-    Serial.flush();    
-  }else{
-    Serial.println("NTP time synchronized.");      
-    Serial.flush();    
+    Serial.println("Failed to obtain time");
+    Serial.flush();
+  } else {
+    Serial.println("NTP time synchronized.");
+    Serial.flush();
   }
 #endif
 }
@@ -257,63 +288,63 @@ int8_t read_water_level() {
   */
   int8_t lvl = 0;
   // digitalWrite(32, LOW);
-  if (!digitalRead(14)){
+  if (!digitalRead(14)) {
     lvl = 5;
-  }else if (!digitalRead(27)){
+  } else if (!digitalRead(27)) {
     lvl = 4;
-  }else if (!digitalRead(26)){
+  } else if (!digitalRead(26)) {
     lvl = 3;
-  }else if (!digitalRead(25)){
+  } else if (!digitalRead(25)) {
     lvl = 2;
-  }else if (!digitalRead(33)){
+  } else if (!digitalRead(33)) {
     lvl = 1;
-  }  
+  }
   // digitalWrite(32, LOW);
 
   return lvl;
 }
 
 
-void log_water_level(int8_t latest_water_lvl){
-  digitalWrite(LED_PIN, LOW); 
-  
-  char buffer[64];  // Buffer for formatted string   
-  getLocalTime(&timeinfo); 
+void log_water_level(int8_t latest_water_lvl) {
+  digitalWrite(LED_PIN, LOW);
+
+  char buffer[64];  // Buffer for formatted string
+  getLocalTime(&timeinfo);
   strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  snprintf(buffer, sizeof(buffer), "%s--%d\n", timeString, curr_water_level);    
+  snprintf(buffer, sizeof(buffer), "%s--%d\n", timeString, curr_water_level);
 #if DEBUG
   Serial.printf("logging info: %s\n", buffer);
 #endif
 
-  if (sd_card_ok){    
+  if (sd_card_ok) {
 #if DEBUG
     Serial.printf("SD card OK, logging.\n");
     Serial.flush();
 #endif
-    if (!appendFile(SD, "/water_level_log.txt", buffer)){
+    if (!appendFile(SD, "/water_level_log.txt", buffer)) {
 #if DEBUG
       Serial.printf("Appending failed, try writing..\n");
       Serial.flush();
 #endif
       writeFile(SD, "/water_level_log.txt", buffer);
     }
-  }else{
+  } else {
 #if DEBUG
     Serial.printf("SD card not OK, skip logging.\n");
     Serial.flush();
 #endif
   }
-  
-  digitalWrite(LED_PIN, HIGH); 
+
+  digitalWrite(LED_PIN, HIGH);
 }
 
-void handle_comm(){
-  digitalWrite(LED_PIN, LOW); 
-  
-  if (!wifi_on){
+void handle_comm() {
+  digitalWrite(LED_PIN, LOW);
+
+  if (!wifi_on) {
     turn_on_wifi();
   }
-  if (!wifi_on){    
+  if (!wifi_on) {
     return;
   }
 
@@ -321,60 +352,59 @@ void handle_comm(){
 #if DEBUG
   Serial.printf("message count: %d\n", messageCount);
 #endif
-  
+  // esp_task_wdt_reset();
+  vTaskDelay(1);
+
   while (messageCount) {
 #if DEBUG
-      Serial.println("New Telegram Message Received!");
+    Serial.println("New Telegram Message Received!");
+    Serial.flush();
+#endif
+    for (int i = 0; i < messageCount; i++) {
+      String text = bot->messages[i].text;
+      String sender = bot->messages[i].from_name;
+#if DEBUG
+      Serial.print("Message from ");
+      Serial.print(sender);
+      Serial.print(": ");
+      Serial.println(text);
       Serial.flush();
 #endif
-      for (int i = 0; i < messageCount; i++) {
-          String text = bot->messages[i].text;
-          String sender = bot->messages[i].from_name;
-#if DEBUG
-          Serial.print("Message from ");
-          Serial.print(sender);
-          Serial.print(": ");
-          Serial.println(text);
-          Serial.flush();
-#endif
-          if (text == "state") {
-              getLocalTime(&timeinfo); 
-              strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);              
-              sendTelegramMessage("Water level at %s : %d", timeString, curr_water_level);
-              if (0 != last_pump_op_time_in_loops){
-                sendTelegramMessage("Last pump op %d H %d M %d S ago, took %d sec", 
-                  loops_since_last_2to1 * loop_period_sec/ 3600, (loops_since_last_2to1 * loop_period_sec/ 60) % 60, (loops_since_last_2to1 * loop_period_sec) % 60,
-                  last_pump_op_time_in_loops * loop_period_sec
-                );
-              }
-          }
-          else if (text == "uptime"){
-            sendTelegramMessage("Up %d days %02d:%02d:%02d since boot", 
-                  (loops_since_boot * loop_period_sec / 3600 / 24),
-                  (loops_since_boot * loop_period_sec/ 3600) % 24, (loops_since_boot * loop_period_sec/ 60) % 60, (loops_since_boot * loop_period_sec) % 60                  
-                );              
-          }
-          else if (text == "on") {
-              // digitalWrite(LED_PIN, HIGH);
-              // sendTelegramMessage("LED is now ON.");
-          } 
-          else if (text == "off") {
-              // digitalWrite(LED_PIN, LOW);
-              // sendTelegramMessage("LED is now OFF.");
-          } 
-          else {
-              sendTelegramMessage("Unknown command..");
-          }
+      if (text == "state") {
+        getLocalTime(&timeinfo);
+        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        sendTelegramMessage("Water level at %s : %d", timeString, curr_water_level);
+        if (0 != last_pump_op_time_in_loops) {
+          sendTelegramMessage("Last pump op %d H %d M %d S ago, took %d sec",
+                              loops_since_last_2to1 * loop_period_sec / 3600, (loops_since_last_2to1 * loop_period_sec / 60) % 60, (loops_since_last_2to1 * loop_period_sec) % 60,
+                              last_pump_op_time_in_loops * loop_period_sec);
+        }
+      } else if (text == "uptime") {
+        sendTelegramMessage("Up %d days %02d:%02d:%02d since boot",
+                            (loops_since_boot * loop_period_sec / 3600 / 24),
+                            (loops_since_boot * loop_period_sec / 3600) % 24, (loops_since_boot * loop_period_sec / 60) % 60, (loops_since_boot * loop_period_sec) % 60);
+      } else if (text == "on") {
+        // digitalWrite(LED_PIN, HIGH);
+        // sendTelegramMessage("LED is now ON.");
+      } else if (text == "off") {
+        // digitalWrite(LED_PIN, LOW);
+        // sendTelegramMessage("LED is now OFF.");
+      } else {
+        sendTelegramMessage("Unknown command..");
       }
 
-      messageCount = bot->getUpdates(bot->last_message_received + 1);
+      // esp_task_wdt_reset();
+      vTaskDelay(1);
+    }
+
+    messageCount = bot->getUpdates(bot->last_message_received + 1);
   }
 
-  digitalWrite(LED_PIN, HIGH); 
+  digitalWrite(LED_PIN, HIGH);
 }
 
 
-uint8_t turn_on_wifi(){
+uint8_t turn_on_wifi() {
   // return 1: wifi turned on successfully
   //        0: wifi turn on failed
 #if DEBUG
@@ -385,36 +415,36 @@ uint8_t turn_on_wifi(){
   WiFi.begin(ssid.c_str(), password.c_str());
 
   unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 500) { // 0.5 timeout
-      delay(50);
-  #if DEBUG
-      Serial.print(".");
-      Serial.flush();
-  #endif
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 500) {  // 0.5 timeout
+    delay(50);
+#if DEBUG
+    Serial.print(".");
+    Serial.flush();
+#endif
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     wifi_on = 1;
 #if DEBUG
     Serial.println("\nWiFi Connected!");
-    Serial.flush();    
+    Serial.flush();
 #endif
-    return 1;  
+    return 1;
   } else {
     wifi_on = 0;
 #if DEBUG
     Serial.println("WiFi Connection Failed.");
-    Serial.flush();    
+    Serial.flush();
 #endif
     return 0;
   }
 }
 
-void turn_off_wifi(){
-  if (wifi_on){
+void turn_off_wifi() {
+  if (wifi_on) {
     // Disable WiFi to save power
     WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);    
+    WiFi.mode(WIFI_OFF);
     wifi_on = 0;
 #if DEBUG
     Serial.println("WiFi turned Off.");
@@ -427,138 +457,132 @@ void turn_off_wifi(){
 // **Function to Write to a File**
 void writeFile(fs::FS &fs, const char *path, const char *message) {
 #if DEBUG
-    Serial.printf("Writing file: %s\n", path);
+  Serial.printf("Writing file: %s\n", path);
+  Serial.flush();
+#endif
+  File file = fs.open(path, FILE_WRITE);
+  if (!file) {
+#if DEBUG
+    Serial.println("Failed to open file for writing!");
     Serial.flush();
 #endif
-    File file = fs.open(path, FILE_WRITE);
-    if (!file) {
+    return;
+  }
+  if (file.print(message)) {
 #if DEBUG
-        Serial.println("Failed to open file for writing!");
-        Serial.flush();
+    Serial.println("File written successfully.");
+    Serial.flush();
 #endif
-        return;
-    }
-    if (file.print(message)) {
+  } else {
 #if DEBUG
-        Serial.println("File written successfully.");
-        Serial.flush();
+    Serial.println("Write failed.");
+    Serial.flush();
 #endif
-    } else {
-#if DEBUG
-        Serial.println("Write failed.");
-        Serial.flush();
-#endif
-    }
-    file.close();
+  }
+  file.close();
 }
 
 
 // **Function to Read and Parse Configuration File**
 void readConfigFile(fs::FS &fs, const char *path) {
-    Serial.printf("Reading config file: %s\n", path);
-    Serial.flush();
-    
-    File file = fs.open(path);
-    if (!file) {
-        Serial.println("Failed to open config file for reading!");
-        Serial.flush();
-        return;
-    }
+  Serial.printf("Reading config file: %s\n", path);
+  Serial.flush();
 
-    while (file.available()) {
-        String line = file.readStringUntil('\n'); // Read a line from file
-        line.trim();  // Remove whitespace and newline characters
-
-        if (line.startsWith("loop_period_sec:")) {
-            loop_period_sec = line.substring(line.indexOf(":") + 1).toInt();
-        } 
-        else if (line.startsWith("max_sec_between_logs:")) {
-            max_sec_between_logs = line.substring(line.indexOf(":") + 1).toInt();
-        } 
-        else if (line.startsWith("max_sec_between_comm:")) {
-            max_sec_between_comm = line.substring(line.indexOf(":") + 1).toInt();
-        } 
-        else if (line.startsWith("wifi_ssid:")) {
-            ssid = line.substring(line.indexOf(":") + 1);
-        } 
-        else if (line.startsWith("wifi_password:")) {
-            password = line.substring(line.indexOf(":") + 1);
-        }
-        else if (line.startsWith("telegram_token:")) {
-            telegram_botToken = line.substring(line.indexOf(":") + 1);
-        }
-        else if (line.startsWith("telegram_chatID:")) {
-            telegram_chatID = line.substring(line.indexOf(":") + 1);
-        } 
-    }
-    
-    file.close();
-    
-    // Print parsed values
-    Serial.println("Configuration Loaded:");
-    Serial.printf("  loop_period_sec: %d\n", loop_period_sec);
-    Serial.printf("  max_sec_between_logs: %d\n", max_sec_between_logs);
-    Serial.printf("  max_sec_between_comm: %d\n", max_sec_between_comm);
-    Serial.printf("  WiFi ssid: %s\n", ssid.c_str());
-    Serial.printf("  WiFi password: %s\n", password.c_str());
-    Serial.printf("  Telegram bot token: %s\n", telegram_botToken.c_str());
-    Serial.printf("  Telegram chat ID: %s\n", telegram_chatID.c_str());
+  File file = fs.open(path);
+  if (!file) {
+    Serial.println("Failed to open config file for reading!");
     Serial.flush();
+    return;
+  }
+
+  while (file.available()) {
+    String line = file.readStringUntil('\n');  // Read a line from file
+    line.trim();                               // Remove whitespace and newline characters
+
+    if (line.startsWith("loop_period_sec:")) {
+      loop_period_sec = line.substring(line.indexOf(":") + 1).toInt();
+    } else if (line.startsWith("max_sec_between_logs:")) {
+      max_sec_between_logs = line.substring(line.indexOf(":") + 1).toInt();
+    } else if (line.startsWith("max_sec_between_comm:")) {
+      max_sec_between_comm = line.substring(line.indexOf(":") + 1).toInt();
+    } else if (line.startsWith("wifi_ssid:")) {
+      ssid = line.substring(line.indexOf(":") + 1);
+    } else if (line.startsWith("wifi_password:")) {
+      password = line.substring(line.indexOf(":") + 1);
+    } else if (line.startsWith("telegram_token:")) {
+      telegram_botToken = line.substring(line.indexOf(":") + 1);
+    } else if (line.startsWith("telegram_chatID:")) {
+      telegram_chatID = line.substring(line.indexOf(":") + 1);
+    }
+  }
+
+  file.close();
+
+  // Print parsed values
+  Serial.println("Configuration Loaded:");
+  Serial.printf("  loop_period_sec: %d\n", loop_period_sec);
+  Serial.printf("  max_sec_between_logs: %d\n", max_sec_between_logs);
+  Serial.printf("  max_sec_between_comm: %d\n", max_sec_between_comm);
+  Serial.printf("  WiFi ssid: %s\n", ssid.c_str());
+  Serial.printf("  WiFi password: %s\n", password.c_str());
+  Serial.printf("  Telegram bot token: %s\n", telegram_botToken.c_str());
+  Serial.printf("  Telegram chat ID: %s\n", telegram_chatID.c_str());
+  Serial.flush();
 }
 
 // **Function to Append Data to a File**
 uint8_t appendFile(fs::FS &fs, const char *path, const char *message) {
   // return 1: success , 0: fail
-    uint8_t ret = 0;
+  uint8_t ret = 0;
 #if DEBUG
-    Serial.printf("Appending to file: %s\n", path);
+  Serial.printf("Appending to file: %s\n", path);
+  Serial.flush();
+#endif
+  File file = fs.open(path, FILE_APPEND);
+  if (!file) {
+#if DEBUG
+    Serial.println("Failed to open file for appending!");
     Serial.flush();
 #endif
-    File file = fs.open(path, FILE_APPEND);
-    if (!file) {
+    return 0;
+  }
+  if (file.print(message)) {
 #if DEBUG
-        Serial.println("Failed to open file for appending!");
-        Serial.flush();
-#endif        
-        return 0;
-    }
-    if (file.print(message)) {
-#if DEBUG      
-        Serial.println("Append successful.");
-        Serial.flush();
-#endif        
-        ret = 1;
-    } else {
-#if DEBUG      
-        Serial.println("Append failed.");
-        Serial.flush();
-#endif        
-        ret = 0;
-    }
-    file.close();
-    return ret;
+    Serial.println("Append successful.");
+    Serial.flush();
+#endif
+    ret = 1;
+  } else {
+#if DEBUG
+    Serial.println("Append failed.");
+    Serial.flush();
+#endif
+    ret = 0;
+  }
+  file.close();
+  return ret;
 }
 
-bool sendTelegramMessage(const char* format, ...) {
-    
-    if (!wifi_on){
-      turn_on_wifi();
-    }
-    if (!wifi_on){    
-      return false;
-    }
+bool sendTelegramMessage(const char *format, ...) {
 
-    // **Format the message using snprintf()**
-    char message[256];  // Buffer for formatted message
-    va_list args;
-    va_start(args, format);
-    vsnprintf(message, sizeof(message), format, args);
-    va_end(args);
+  if (!wifi_on) {
+    turn_on_wifi();
+  }
+  if (!wifi_on) {
+    return false;
+  }
+
+  // **Format the message using snprintf()**
+  char message[256];  // Buffer for formatted message
+  va_list args;
+  va_start(args, format);
+  vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
 
 #if DEBUG
-    Serial.printf("Send %s to Telegram.", message);
-    Serial.flush();
+  Serial.printf("Send %s to Telegram.", message);
+  Serial.flush();
 #endif
 
-    return bot->sendMessage(telegram_chatID, message, "");
+  return bot->sendMessage(telegram_chatID, message, "");
 }
