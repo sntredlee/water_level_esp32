@@ -88,5 +88,5 @@ bool sendTelegramMessage(const char *format, ...) {
   Serial.flush();
 #endif
 
-  return bot->sendMessage(telegram_chatID, message, "");
+  return bot->sendMessage(chat_id, message, "");
 }

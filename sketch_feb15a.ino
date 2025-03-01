@@ -1,6 +1,8 @@
 #include "time.h"
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
+#include "config.h"
+#include "command.h"
 // #include "esp_system.h"  // Required for reset reason
 
 /*
@@ -38,6 +40,34 @@ Two sleep modes:
 
    Use TCP instead of UDP to report water level, as UDP over ESP32 is not reliable. -- No longer report water level to Raspberry Pi, running remote command on chip.
 */
+
+
+
+cmd_err_t version_command(int argc, char *argv[])
+{
+  Serial.println("Version 1.0");
+  return ERR_CMD_OK;
+}
+
+static const command_t init_commands[] =
+{
+    { "version",             version_command,        0, NULL, NULL, NULL,    "Get version"}, \    
+    CMD_TABLE_END
+};
+
+
+void setup() {
+  Serial.begin(115200);
+  init_cmd(init_commands);
+}
+
+
+void loop() {  
+  command_console_task();
+}
+
+
+/*
 
 
 
@@ -234,3 +264,5 @@ const TelegramCommand commands[] = {
     { "uptime", cmd_uptime, "Report ESP32 uptime" },    
 };
 const int numCommands = sizeof(commands) / sizeof(TelegramCommand);
+
+*/

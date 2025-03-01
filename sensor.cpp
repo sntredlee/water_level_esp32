@@ -57,9 +57,10 @@ static int8_t read_current_water_level() {
 
 void log_water_level(int8_t latest_water_lvl) {  
   struct tm timeinfo;
-  char buffer[64];  // Buffer for formatted string
+  static char buffer[64];  // Buffer for formatted string
+  static char timeString[30];
 
-  if (!is_sd_card_ok) {
+  if (!is_sd_card_ok()) {
 #if DEBUG
     Serial.printf("SD card not OK, skip logging.\n");
     Serial.flush();

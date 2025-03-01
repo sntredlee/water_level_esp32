@@ -1,7 +1,7 @@
 #include "sd_card.h"
 
-static bool is_sd_card_ok = false;
-static fs::FS &fs = SD;
+static bool _sd_card_ok = false;
+static fs::FS &sd_fs = SD;
 
 // **Function to Read and Parse Configuration File**
 config_t readConfigFile() {  
@@ -9,7 +9,7 @@ config_t readConfigFile() {
 
   config_t sys_config;
 
-  if (!is_sd_card_ok){
+  if (!_sd_card_ok){
     Serial.printf("SD card is not installed/initialized, returning default config");
     Serial.flush();  
     return sys_config;
@@ -18,7 +18,7 @@ config_t readConfigFile() {
     Serial.flush();
   }
 
-  File file = fs.open(path);
+  File file = sd_fs.open(path);
   if (!file) {
     Serial.println("Failed to open config file for reading!");
     Serial.flush();
@@ -70,16 +70,20 @@ bool init_sd_card(){
 
   if (!SD.begin(SD_CS)) {
     Serial.println("Card Mount Failed!");    
-    is_sd_card_ok = false;
+    _sd_card_ok = false;
   } else {
     Serial.println("SD Card Initialized.");        
-    is_sd_card_ok = true;
+    _sd_card_ok = true;
   }
 
   Serial.flush();
   return is_sd_card_ok;
 }
 
+
+bool is_sd_card_ok(){
+  return _sd_card_ok;
+}
 
 // **Function to Write to a File**
 bool writeFile(const char *path, const char *message) {
@@ -89,7 +93,7 @@ bool writeFile(const char *path, const char *message) {
   Serial.flush();
 #endif
 
-  File file = fs.open(path, FILE_WRITE);
+  File file = sd_fs.open(path, FILE_WRITE);
   if (!file) {
 #if DEBUG
     Serial.println("Failed to open file for writing!");
@@ -125,7 +129,7 @@ bool appendFile(const char *path, const char *message) {
   Serial.flush();
 #endif
 
-  File file = fs.open(path, FILE_APPEND);
+  File file = sd_fs.open(path, FILE_APPEND);
   if (!file) {
 #if DEBUG
     Serial.println("Failed to open file for appending!");

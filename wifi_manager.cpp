@@ -2,13 +2,22 @@
 #include "esp_wifi.h"
 #include "wifi_manager.h"
 
-static bool is_wifi_on = false;
+static bool _wifi_on = false;
+static String ssid;
+static String password;
+
 
 bool is_wifi_on(){
-  return is_wifi_on;
+  return _wifi_on;
 }
 
-bool turn_on_wifi(String ssid, String passowrd) {
+void init_wifi(String _ssid, String _password){
+  ssid = _ssid;
+  password = _password;
+}
+
+
+bool turn_on_wifi() {
   // return true: wifi turned on successfully
   //        false: wifi turn on failed
 #if DEBUG
@@ -17,7 +26,7 @@ bool turn_on_wifi(String ssid, String passowrd) {
 #endif
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid.c_str(), password.c_str());
+  WiFi.begin();
 
   unsigned long startAttemptTime = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 500) {  // 0.5 timeout
@@ -29,7 +38,7 @@ bool turn_on_wifi(String ssid, String passowrd) {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    is_wifi_on = true;
+    _wifi_on = true;
 
 #if DEBUG
     Serial.println("\nWiFi Connected!");
@@ -38,7 +47,7 @@ bool turn_on_wifi(String ssid, String passowrd) {
 
   } else {
 
-    is_wifi_on = false;
+    _wifi_on = false;
 
 #if DEBUG
     Serial.println("WiFi Connection Failed.");
@@ -47,7 +56,7 @@ bool turn_on_wifi(String ssid, String passowrd) {
 
   }
 
-  return is_wifi_on;
+  return _wifi_on;
 }
 
 
@@ -56,7 +65,7 @@ void turn_off_wifi() {
     // Disable WiFi to save power
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
-    is_wifi_on = false;
+    _wifi_on = false;
 
 #if DEBUG
     Serial.println("WiFi turned Off.");

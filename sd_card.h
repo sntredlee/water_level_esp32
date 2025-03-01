@@ -10,6 +10,7 @@
 #define SD_CS 4
 
 bool init_sd_card();
+bool is_sd_card_ok();
 config_t readConfigFile();
 bool writeFile(const char *path, const char *message);
 bool appendFile(const char *path, const char *message);
