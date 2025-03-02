@@ -45,7 +45,8 @@ typedef struct
 
 // int            console_add_cmd_table ( const command_t *commands );
 void init_cmd(const command_t* commands);
-cmd_err_t  console_parse_cmd(const char* line);
+cmd_err_t console_parse_cmd(const char* line);
+int console_printf(const char *format, ...);    // if anything should be printed in the user-defined command, use this function 
 void command_console_task();
 
 #endif

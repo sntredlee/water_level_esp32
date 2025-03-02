@@ -39,13 +39,25 @@ Two sleep modes:
     Note: millis() stops increasing in light sleep mode
 
    Use TCP instead of UDP to report water level, as UDP over ESP32 is not reliable. -- No longer report water level to Raspberry Pi, running remote command on chip.
-*/
 
+
+  // run into problem when the code crash for unknown reason.
+  // thought it was stack overflow but it wasn't.
+  // Eventually find out the problem following chatGPT to print the backtrace:
+  // "C:\\Users\\Yun\\AppData\\Local\\Arduino15\\packages\\esp32\\tools\\esp-x32\\2405/bin/xtensa-esp32-elf-addr2line.exe" 
+  //    -e "C:\Users\Yun\AppData\Local\arduino\sketches\B49BC885815448DCD104CD2F00AFED07\sketch_feb15a.ino.elf" 
+  //     0x40089f8a:0x3ffb3cd0 0x40173c06:0x3ffb3ce0 0x4016e6f9:0x3ffb4000 0x4016e736:0x3ffb4090 0x400de96c:0x3ffb40d0 0x400de9fd:0x3ffb4150 0x400d3298:0x3ffb41a0 0x400d32f9:0x3ffb41f0 0x400d33a4:0x3ffb4210 0x400d33f9:0x3ffb4230 0x400d34ff:0x3ffb4250 0x400e1c54:0x3ffb4270 0x4008cf7e:0x3ffb4290
+  // The path to .exe and .elf is found by Go to File > Preferences.
+  //      Enable "Show Verbose Output" for:
+  //            Compilation
+  //            Upload
+  // The problem: a char pointer is NULL !!
+*/
 
 
 cmd_err_t version_command(int argc, char *argv[])
 {
-  Serial.println("Version 1.0");
+  console_printf("Version 1.0");
   return ERR_CMD_OK;
 }
 
