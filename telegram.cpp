@@ -2,7 +2,7 @@
 #include <UniversalTelegramBot.h>
 #include "telegram.h"
 #include "wifi_manager.h"
-
+#include "config.h"
 
 static WiFiClientSecure secure_client;
 static UniversalTelegramBot *bot = nullptr;

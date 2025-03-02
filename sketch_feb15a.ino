@@ -3,8 +3,10 @@
 #include <UniversalTelegramBot.h>
 #include "config.h"
 #include "command.h"
-// #include "esp_system.h"  // Required for reset reason
-
+#include "sd_card.h"
+#include "wifi_manager.h"
+#include "telegram.h"
+#include "sensor.h"
 /*
 Note about telegram:
 
@@ -68,14 +70,87 @@ static const command_t init_commands[] =
 };
 
 
+// Periodic tasks
+typedef void (*periodic_task_function_t)();
+typedef struct{
+  const char * task_name;
+  periodic_task_function_t task_func;
+  uint32_t task_period_sec;
+  uint64_t last_run_ts;
+}periodic_task_t;
+#define MAX_PERIODIC_TASKS 10
+static periodic_task_t periodic_tasks[MAX_PERIODIC_TASKS];
+static int num_periodic_tasks = 0;
+
+
+static config_t sys_config;
+
 void setup() {
   Serial.begin(115200);
   init_cmd(init_commands);
+  
+  if (init_sd_card()){
+    sys_config = readConfigFile();
+  }
+
+  init_wifi(sys_config.ssid, sys_config.password);
+
+  init_telegram(sys_config.telegram_botToken, sys_config.telegram_chatID);
+
+  init_sensor(sys_config.loop_period_sec, sys_config.max_sec_between_logs);
+
+  // setup tasks
+#if DEBUG
+  Serial.printf("Adding task for water level check.\n\r");
+#endif
+  periodic_task_t water_level_task{
+    .task_name="water level check", 
+    .task_func=check_water_level,
+    .task_period_sec=sys_config.loop_period_sec,
+    .last_run_ts=0
+  };
+  periodic_tasks[num_periodic_tasks++] = water_level_task;
 }
 
 
 void loop() {  
-  command_console_task();
+    
+  uint64_t ts_loop_start = esp_timer_get_time();
+
+  for (int i_task=0; i_task < num_periodic_tasks; i_task++){
+      periodic_task_t* p_task = &periodic_tasks[i_task];
+      if ((0 == p_task->last_run_ts) || (ts_loop_start >= p_task->last_run_ts + p_task->task_period_sec * 1000000)){
+#if DEBUG
+        Serial.printf("Running task %s\n\r", p_task->task_name);
+        Serial.flush();
+#endif
+        p_task->task_func();
+        p_task->last_run_ts = ts_loop_start;
+      }
+  }
+
+
+  // Prepare to go to sleep
+  uint64_t loop_cost_us = esp_timer_get_time() - ts_loop_start;
+#if DEBUG
+  Serial.print("Loop time (us): ");
+  Serial.println(loop_cost_us);
+  Serial.flush();
+#endif
+  if (loop_cost_us >= sys_config.loop_period_sec * 1000000) {
+    // This loop takes too long, no sleep, go to next loop immediately
+    // delay(1 ms) is called for the backend to do something.
+    delay(1);
+  } else {
+    // light sleep is more power efficient because we need to wake up frequently and the power cost of rebooting (150ms @ 200mA) is much more
+    turn_off_wifi();
+#if DEBUG
+    Serial.print("go to light sleep mode...");
+    Serial.flush();
+#endif
+    esp_sleep_enable_timer_wakeup(sys_config.loop_period_sec * 1000000 - loop_cost_us);
+    esp_light_sleep_start();
+  }
 }
 
 

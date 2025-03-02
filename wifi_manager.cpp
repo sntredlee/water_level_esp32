@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include "esp_wifi.h"
 #include "wifi_manager.h"
+#include "config.h"
 
 static bool _wifi_on = false;
 static String ssid;

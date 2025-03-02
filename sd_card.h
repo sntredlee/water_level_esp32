@@ -6,7 +6,6 @@
 #include <SPI.h>
 #include "config.h"
 
-
 #define SD_CS 4
 
 bool init_sd_card();

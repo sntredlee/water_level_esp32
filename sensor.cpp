@@ -93,10 +93,9 @@ void log_water_level(int8_t latest_water_lvl) {
 }
 
 
-int8_t check_water_level(){
+void check_water_level(){
   // This function should called once in every loop
   // read the latest water level, and handle the other tasks (analysis, logging)
-  // return the latest water level
   curr_water_level = read_current_water_level();
 
   if ((curr_water_level != last_water_level) || (loops_since_last_log > max_sec_between_logs / loop_period_sec)) {    
@@ -118,5 +117,4 @@ int8_t check_water_level(){
   }
 
   last_water_level = curr_water_level;
-  return curr_water_level;  
 }
