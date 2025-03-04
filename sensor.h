@@ -1,9 +1,12 @@
 #ifndef SENSOR_H
 #define SENSOR_H
 
+#include <Arduino.h>
 #include <stdint.h>
+#include "command.h"
 
-void init_sensor(uint8_t _loop_period_sec, uint8_t _max_sec_between_logs);
+void init_sensor(uint32_t _max_sec_between_logs);
 void check_water_level();
+cmd_err_t state_command(int argc, char *argv[]);
 
 #endif

@@ -1,12 +1,8 @@
 #ifndef SD_CARD_H
 #define SD_CARD_H
 
-#include <FS.h>
-#include <SD.h>
-#include <SPI.h>
+#include <Arduino.h>
 #include "config.h"
-
-#define SD_CS 4
 
 bool init_sd_card();
 bool is_sd_card_ok();

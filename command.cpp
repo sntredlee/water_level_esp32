@@ -5,18 +5,21 @@
 #include "config.h"
 
 static cmd_err_t help_command(int argc, char* argv[]);
-
+static cmd_err_t version_command(int argc, char *argv[]);
+static cmd_err_t uptime_command(int argc, char *argv[]);
 
 #define MAX_NUM_COMMANDS 64
 static command_t console_command_table_array[MAX_NUM_COMMANDS+1] = {
   { "help",             help_command,        0, NULL, NULL, NULL,    "help [command name]"},
+  { "version",          version_command,     0, NULL, NULL, NULL,    "get FW version"},
+  { "uptime",           uptime_command,      0, NULL, NULL, NULL,    "running time since reboot"},
+  { NULL,               NULL,                0, NULL, NULL, NULL,    NULL}
 };
-static int console_command_table_len = 1;
 
 // output of each command and/or error message is saved in this array
 #define COMMAND_OUTPUT_MAX_LEN 128
 static char console_printf_buffer[COMMAND_OUTPUT_MAX_LEN];
-static int console_printf_buffer_len = 0;
+// static int console_printf_buffer_len = 0;
 
 #define DELIMIT_STR  " "  // space only
 #define DELIMIT_CHAR ' '  // space only
@@ -45,11 +48,18 @@ static const char* const console_error_strings[] =
 
 void init_cmd(const command_t* commands)
 {
-    const command_t* cmd_ptr;
-    for (cmd_ptr = commands; cmd_ptr->name != NULL, console_command_table_len<MAX_NUM_COMMANDS; cmd_ptr++, console_command_table_len++){
-        console_command_table_array[console_command_table_len] = *cmd_ptr;
+    const command_t* cmd_ptr_to_add = commands;
+
+    int num_commands_total = 0;   // total number of commands in the command look up table
+    while (NULL != console_command_table_array[num_commands_total].command)
+      num_commands_total++;
+    
+    while ((cmd_ptr_to_add->name != NULL) && (num_commands_total<MAX_NUM_COMMANDS)){ 
+        console_command_table_array[num_commands_total] = *cmd_ptr_to_add;
+        cmd_ptr_to_add++;
+        num_commands_total++;
     }
-    console_command_table_array[console_command_table_len].command = NULL;  //End of table marker
+    console_command_table_array[num_commands_total].command = NULL;  //End of table marker
 
     Serial.printf("Serial terminal command line interface.  Left arrow: ctrl-b, Right arrow: ctrl-f, Home: ctrl-a, End: ctrl-e.\r\n");
     Serial.printf("Need to set Flow control to None in putty.\r\n>");
@@ -75,6 +85,8 @@ cmd_err_t console_parse_cmd(const char* line){
     uint8_t param_cnt = 0;
     char* saveptr = NULL;
     char copy[strlen(line) + 1];
+
+    console_printf_buffer[0] = '\0';
 
     /* Copy original buffer into local buffer, as tokenize will change the original string */
     strcpy(copy, line);
@@ -235,15 +247,13 @@ cmd_err_t console_do_enter(){
     if (strlen(console_buffer) && (strlen(console_buffer) > strspn(console_buffer, DELIMIT_STR))){
       // buffer is not empty and it's not just delimit characters      
       Serial.print("\r\n");
-      console_printf_buffer_len = 0;
 
       err = console_parse_cmd(console_buffer);
-      
-      // print the output message
-      if (console_printf_buffer_len){
-        Serial.print(console_printf_buffer);
-        console_printf_buffer_len = 0; 
+      if (strlen(console_printf_buffer)){
+        // print the output message
+        Serial.print(console_printf_buffer); 
       }
+
     }
     /* prepare for a new line of entry */
     console_buffer[0] = 0;
@@ -308,10 +318,14 @@ int console_printf(const char *format, ...) {
   int len;
   va_list args;
   va_start(args, format);
-  len = vsnprintf(console_printf_buffer + console_printf_buffer_len, COMMAND_OUTPUT_MAX_LEN - console_printf_buffer_len, format, args);
-  console_printf_buffer_len += len;
+  len = vsnprintf(console_printf_buffer + strlen(console_printf_buffer), COMMAND_OUTPUT_MAX_LEN - strlen(console_printf_buffer), format, args);
   va_end(args);
   return len;
+}
+
+
+const char* get_command_output(){
+  return console_printf_buffer;
 }
 
 
@@ -352,4 +366,22 @@ static cmd_err_t help_command(int argc, char* argv[]){
             break;
     }
     return err;
+}
+
+static cmd_err_t version_command(int argc, char *argv[])
+{
+  console_printf("Version %s", VERSION_STRING);
+  return ERR_CMD_OK;
+}
+
+static cmd_err_t uptime_command(int argc, char *argv[])
+{
+  int t_sec = esp_timer_get_time() / 1000000;
+  console_printf("Up %d days %02d:%02d:%02d since boot",
+                  t_sec / 3600 / 24,
+                  (t_sec / 3600) % 24,
+                  (t_sec / 60) % 60,
+                  t_sec % 60
+                  );
+  return ERR_CMD_OK;
 }

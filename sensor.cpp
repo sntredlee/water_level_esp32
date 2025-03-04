@@ -1,17 +1,23 @@
+#include <Arduino.h>
+#include "config.h"
 #include "sensor.h"
 #include "sd_card.h"
 #include "time.h"
+#include "telegram.h"
+#include "time_utils.h"
 
-static RTC_DATA_ATTR int8_t last_water_level = -1;
-static RTC_DATA_ATTR int8_t curr_water_level = -1;
-static RTC_DATA_ATTR uint32_t loops_since_last_2to1 = 0;
-static RTC_DATA_ATTR uint32_t last_pump_op_time_in_loops = 0;
-static RTC_DATA_ATTR uint64_t loops_since_last_log = 0;
+#define WARN_PIN 15
+static bool warning_mesg_sent;
 
-static uint8_t loop_period_sec;
-static uint8_t max_sec_between_logs;
+static int8_t last_water_level = -1;
+static int8_t curr_water_level = -1;
+static uint64_t ts_us_last_2to1 = 0;
+static int last_pump_op_time_sec = 0;
+static uint64_t ts_us_last_log = 0;
 
-void init_sensor(uint8_t _loop_period_sec, uint8_t _max_sec_between_logs){
+static uint32_t max_sec_between_logs;
+
+void init_sensor(uint32_t _max_sec_between_logs){
   pinMode(32, OUTPUT);
   digitalWrite(32, LOW);
 
@@ -21,7 +27,9 @@ void init_sensor(uint8_t _loop_period_sec, uint8_t _max_sec_between_logs){
   pinMode(27, INPUT_PULLUP);
   pinMode(14, INPUT_PULLUP);
 
-  loop_period_sec = _loop_period_sec;
+  digitalWrite(WARN_PIN, LOW);
+  pinMode(WARN_PIN, OUTPUT);
+
   max_sec_between_logs = _max_sec_between_logs;
 }
 
@@ -56,9 +64,7 @@ static int8_t read_current_water_level() {
 
 
 void log_water_level(int8_t latest_water_lvl) {  
-  struct tm timeinfo;
   static char buffer[64];  // Buffer for formatted string
-  static char timeString[30];
 
   if (!is_sd_card_ok()) {
 #if DEBUG
@@ -73,9 +79,7 @@ void log_water_level(int8_t latest_water_lvl) {
   Serial.flush();
 #endif
 
-  getLocalTime(&timeinfo);
-  strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  snprintf(buffer, sizeof(buffer), "%s--%d\n", timeString, curr_water_level);
+  snprintf(buffer, sizeof(buffer), "%s--%d\n", get_current_time(), curr_water_level);
 
 #if DEBUG
   Serial.printf("log to write: %s\n", buffer);
@@ -97,24 +101,65 @@ void check_water_level(){
   // This function should called once in every loop
   // read the latest water level, and handle the other tasks (analysis, logging)
   curr_water_level = read_current_water_level();
-
-  if ((curr_water_level != last_water_level) || (loops_since_last_log > max_sec_between_logs / loop_period_sec)) {    
+  uint64_t curr_ts_us = esp_timer_get_time();
+  if ((curr_water_level != last_water_level) || ((curr_ts_us - ts_us_last_log)/1000000 > max_sec_between_logs)) {    
     log_water_level(curr_water_level);
-    loops_since_last_log = 0;
-  } else {
-    loops_since_last_log++;
+    ts_us_last_log = curr_ts_us;
   }
 
   if (curr_water_level >= last_water_level) {
     // no change, or increasing
-    loops_since_last_2to1 += 1;    
+        
   }else if ((curr_water_level == 1) && (last_water_level == 2)) {
     // Level 2 -> 1, pump operating
-    loops_since_last_2to1 = 0;
+    ts_us_last_2to1 = curr_ts_us;
+#if DEBUG
+    Serial.printf("Water level 2->1. t21=%llu\n", ts_us_last_2to1);
+    Serial.flush();
+#endif
   } else if ((curr_water_level == 0) && (last_water_level == 1)) {
     // Level 1 -> 0, pump operating
-    last_pump_op_time_in_loops = loops_since_last_2to1;
+    last_pump_op_time_sec = (curr_ts_us - ts_us_last_2to1)/1000000;
+#if DEBUG
+    Serial.printf("Water level 1->0. Time since 2->1: %d sec. t21=%llu, t10=%llu\n", last_pump_op_time_sec, ts_us_last_2to1, curr_ts_us);
+    Serial.flush();
+#endif
   }
 
   last_water_level = curr_water_level;
+
+  // make watch dog happy, as this is a heavy task
+  vTaskDelay(1);
+    
+  // Alarm ?
+  if (curr_water_level >= 4) {
+    if (warning_mesg_sent) {
+      // warning message already sent, will not repeatly send
+    } else {
+      warning_mesg_sent = sendTelegramMessage("WARNING : water level reached %d !!!", curr_water_level);
+    }
+    digitalWrite(WARN_PIN, HIGH);
+  } else {
+    // clear the warning flag, so new warning message will be sent when the level rise to critical again
+    warning_mesg_sent = false;
+    digitalWrite(WARN_PIN, LOW);
+  }
+}
+
+
+// Command function implementations
+cmd_err_t state_command(int argc, char *argv[]){
+
+  sendTelegramMessage("Current local time: %s, water level: %d", get_current_time(), curr_water_level);
+  
+  if (last_pump_op_time_sec != 0) {
+      int seconds_since_pump_op = (esp_timer_get_time() - ts_us_last_2to1) / 1000000;
+      sendTelegramMessage("Pump last working %d days %02d:%02d:%02d ago, took %d sec",
+                          seconds_since_pump_op / 3600 / 24,
+                          (seconds_since_pump_op / 3600) % 24,
+                          (seconds_since_pump_op / 60) % 60,
+                          seconds_since_pump_op % 60,
+                          last_pump_op_time_sec);
+  }
+  return ERR_CMD_OK;
 }

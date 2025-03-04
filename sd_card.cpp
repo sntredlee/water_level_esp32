@@ -1,4 +1,9 @@
+#include <FS.h>
+#include <SD.h>
+#include <SPI.h>
 #include "sd_card.h"
+
+#define SD_CS 4
 
 static bool _sd_card_ok = false;
 static fs::FS &sd_fs = SD;

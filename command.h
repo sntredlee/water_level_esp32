@@ -1,6 +1,7 @@
 #ifndef COMMAND_H
 #define COMMAND_H
 
+#include <Arduino.h>
 #include <stdint.h>
 
 typedef enum{
@@ -17,7 +18,7 @@ typedef enum{
     ERR_LAST_ERROR       = -10
 } cmd_err_t;
 
-
+// if anything should be printed in the user-defined command, use this function 
 typedef cmd_err_t (*command_function_t)(int argc, char *argv[]);
 typedef cmd_err_t (*help_example_function_t)( char* command_name, uint32_t eg_select );
 
@@ -43,10 +44,10 @@ typedef struct
 #define CMD_TABLE_END      { NULL, NULL, 0, NULL, NULL, NULL, NULL }
 
 
-// int            console_add_cmd_table ( const command_t *commands );
 void init_cmd(const command_t* commands);
 cmd_err_t console_parse_cmd(const char* line);
 int console_printf(const char *format, ...);    // if anything should be printed in the user-defined command, use this function 
+const char* get_command_output();
 void command_console_task();
 
 #endif

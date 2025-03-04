@@ -3,22 +3,24 @@
 #include "telegram.h"
 #include "wifi_manager.h"
 #include "config.h"
+#include "command.h"
+
+/*
+Note about telegram:
+
+ArduinoJson version 6.16.0  (Version 7 will not work!!!)
+UniversalTelegramBot : version 1.3.0
+*/
 
 static WiFiClientSecure secure_client;
 static UniversalTelegramBot *bot = nullptr;
 static String chat_id;
 
 
-void handle_command(String text) {
+static void handle_telegram_command(String text) {
     text.trim();
-    
-    if (text.equalsIgnoreCase("state")) {
-        Serial.println("Water Level State Requested");
-    } else if (text.equalsIgnoreCase("uptime")) {
-        Serial.println("System Uptime Requested");
-    } else {
-        Serial.println("Unknown Command");
-    }
+    console_parse_cmd(text.c_str());
+
 }
 
 
@@ -29,43 +31,44 @@ void init_telegram(String telegram_botToken, String telegram_chatID){
   sendTelegramMessage("I am online.");
 }
 
-int process_telegram_messages() {
+void process_telegram_messages() {
   int num_mesgs_total = 0;
   if (!is_wifi_on() && !turn_on_wifi()) {
-    return 0;
+    return;
   }
 
   int messageCount = bot->getUpdates(bot->last_message_received + 1);  
-#if DEBUG
-  Serial.printf("message count: %d\n", messageCount);
-#endif
-
   vTaskDelay(1); // make watchdog happy, bot->getUpdates() may take a long time
 
   while (messageCount) {
-
-#if DEBUG
-    Serial.println("New Telegram Message Received!");
-    Serial.flush();
-#endif
 
     for (int i = 0; i < messageCount; i++) {
       String text = bot->messages[i].text;
       // String sender = bot->messages[i].from_name;
 #if DEBUG
-      Serial.print("Message: ");            
+      Serial.print("Telegram message: ");            
       Serial.println(text);
       Serial.flush();
 #endif
 
-      handle_command(text);
+      // pass the string to command console
+      text.trim();
+      console_parse_cmd(text.c_str());
+      const char* cmd_output = get_command_output();
+      if (strlen(cmd_output)){
+        sendTelegramMessage(cmd_output);   
+      }
+    
+      // make watch dog happy, as this is a heavy task
       vTaskDelay(1);
     }
     num_mesgs_total += messageCount;
 
     messageCount = bot->getUpdates(bot->last_message_received + 1);
   }  
-  return num_mesgs_total;
+#if DEBUG
+  Serial.printf("Total telegram message processed: %d\n", num_mesgs_total);
+#endif
 }
 
 
