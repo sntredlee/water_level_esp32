@@ -30,8 +30,8 @@ bool turn_on_wifi() {
   WiFi.begin();
 
   unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 500) {  // 0.5 timeout
-    delay(50);
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 2000) {  // 2.0 timeout
+    delay(200);
 #if DEBUG
     Serial.print(".");
     Serial.flush();

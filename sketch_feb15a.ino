@@ -25,12 +25,6 @@
 
 static config_t sys_config;
 
-static const command_t init_commands[] =
-{
-    { "state",             state_command,        0, NULL, NULL, NULL,    "Get water level state"}, \    
-    CMD_TABLE_END
-};
-
 
 // Periodic tasks
 typedef void (*periodic_task_function_t)();
@@ -42,7 +36,52 @@ typedef struct{
 }periodic_task_t;
 #define MAX_PERIODIC_TASKS 10
 static periodic_task_t periodic_tasks[MAX_PERIODIC_TASKS];
-static int num_periodic_tasks = 0;
+#define SENSING_TASK_IDX 0
+#define TELEGRAM_TASK_IDX 1
+#define NTP_TASK_IDX 2
+static int num_periodic_tasks = 3;
+
+
+
+// Command function implementations
+cmd_err_t show_tasks_command(int argc, char *argv[]){
+  for (int i=0; i<num_periodic_tasks; i++){
+    console_printf("Task %2d : %s , runs every %d seconds\n", i, periodic_tasks[i].task_name,  periodic_tasks[i].task_period_sec);                  
+  }  
+  return ERR_CMD_OK;
+}
+
+cmd_err_t task_period_command(int argc, char *argv[]){
+  
+  int task_id, period_sec;
+  if (sscanf(argv[1], "%d", &task_id) != 1) {
+    console_printf("Can NOT convert %s to integer.\n", argv[1]);
+    return ERR_BAD_ARG;
+  }else if ((task_id < 0) || (task_id >= num_periodic_tasks)){
+    console_printf("Invaid task ID %d.\n", task_id);
+    return ERR_BAD_ARG;
+  }
+
+  if (sscanf(argv[2], "%d", &period_sec) != 1) {
+    console_printf("Can NOT convert %s to integer.\n", argv[2]);
+    return ERR_BAD_ARG;
+  }else if (period_sec <= 0){
+    console_printf("Task period must be a positive value.\n");
+    return ERR_BAD_ARG;
+  }
+
+  console_printf("Setting task %d (%s) to run every %d seconds.\n", task_id, periodic_tasks[task_id].task_name, period_sec);
+  periodic_tasks[task_id].task_period_sec = period_sec;
+  return ERR_CMD_OK;
+}
+
+static const command_t init_commands[] =
+{
+    { "state",             state_command,        0, NULL, NULL, NULL,    "Get water level state"}, \    
+    { "tasks",             show_tasks_command,   0, NULL, NULL, NULL,    "Show scheduled tasks"}, \
+    { "task_period",       task_period_command,  2, NULL, NULL, NULL,    "task_period <task_id> <period in seconds>"}, \
+    CMD_TABLE_END
+};
 
 
 void setup() {
@@ -73,7 +112,7 @@ void setup() {
     .task_period_sec=sys_config.loop_period_sec,
     .last_run_ts=0
   };
-  periodic_tasks[num_periodic_tasks++] = water_level_task;
+  periodic_tasks[SENSING_TASK_IDX] = water_level_task;
 
   Serial.printf("Adding task for handling telegram messages.\n\r");
   periodic_task_t telegram_task{
@@ -82,7 +121,7 @@ void setup() {
     .task_period_sec=sys_config.max_sec_between_comm,
     .last_run_ts=0
   };
-  periodic_tasks[num_periodic_tasks++] = telegram_task;
+  periodic_tasks[TELEGRAM_TASK_IDX] = telegram_task;
   
   Serial.printf("Adding task for synchronizing clock.\n\r");
   periodic_task_t ntp_task{
@@ -91,7 +130,7 @@ void setup() {
     .task_period_sec=sys_config.max_sec_between_ntp,
     .last_run_ts=0
   };
-  periodic_tasks[num_periodic_tasks++] = ntp_task;
+  periodic_tasks[NTP_TASK_IDX] = ntp_task;
   
   digitalWrite(LED_PIN, LED_OFF); 
 }

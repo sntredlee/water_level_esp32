@@ -17,7 +17,7 @@ static command_t console_command_table_array[MAX_NUM_COMMANDS+1] = {
 };
 
 // output of each command and/or error message is saved in this array
-#define COMMAND_OUTPUT_MAX_LEN 128
+#define COMMAND_OUTPUT_MAX_LEN 256
 static char console_printf_buffer[COMMAND_OUTPUT_MAX_LEN];
 // static int console_printf_buffer_len = 0;
 

@@ -150,11 +150,18 @@ void check_water_level(){
 // Command function implementations
 cmd_err_t state_command(int argc, char *argv[]){
 
-  sendTelegramMessage("Current local time: %s, water level: %d", get_current_time(), curr_water_level);
+  int t_sec = esp_timer_get_time() / 1000000;
+  console_printf("Up %d days %02d:%02d:%02d.",
+                  t_sec / 3600 / 24,
+                  (t_sec / 3600) % 24,
+                  (t_sec / 60) % 60,
+                  t_sec % 60
+                  );
+  console_printf("Current time: %s, water level: %d\n", get_current_time(), curr_water_level);
   
   if (last_pump_op_time_sec != 0) {
       int seconds_since_pump_op = (esp_timer_get_time() - ts_us_last_2to1) / 1000000;
-      sendTelegramMessage("Pump last working %d days %02d:%02d:%02d ago, took %d sec",
+      console_printf("Pump last working %d days %02d:%02d:%02d ago, took %d sec",
                           seconds_since_pump_op / 3600 / 24,
                           (seconds_since_pump_op / 3600) % 24,
                           (seconds_since_pump_op / 60) % 60,

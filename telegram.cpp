@@ -53,6 +53,7 @@ void process_telegram_messages() {
 
       // pass the string to command console
       text.trim();
+      text.toLowerCase();
       console_parse_cmd(text.c_str());
       const char* cmd_output = get_command_output();
       if (strlen(cmd_output)){
@@ -80,7 +81,7 @@ bool sendTelegramMessage(const char *format, ...) {
   }
 
   // **Format the message using snprintf()**
-  char message[256];  // Buffer for formatted message
+  static char message[256];  // Buffer for formatted message
   va_list args;
   va_start(args, format);
   vsnprintf(message, sizeof(message), format, args);
