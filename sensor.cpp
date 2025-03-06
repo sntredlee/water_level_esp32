@@ -7,7 +7,13 @@
 #include "time_utils.h"
 
 #define WARN_PIN 15
-static bool warning_mesg_sent;
+static int water_level_warn_threshold = 3;
+static bool water_lvl_warning_mesg_sent = false;
+static int pump_op_time_threshold = 30;
+static bool pump_op_warning_mesg_sent = false;
+
+// send telegram message to notify about pump operation
+static bool notify_about_pump_op = false;
 
 static int8_t last_water_level = -1;
 static int8_t curr_water_level = -1;
@@ -105,8 +111,9 @@ void check_water_level(){
   if ((curr_water_level != last_water_level) || ((curr_ts_us - ts_us_last_log)/1000000 > max_sec_between_logs)) {    
     log_water_level(curr_water_level);
     ts_us_last_log = curr_ts_us;
+    vTaskDelay(1);
   }
-
+  
   if (curr_water_level >= last_water_level) {
     // no change, or increasing
         
@@ -124,26 +131,43 @@ void check_water_level(){
     Serial.printf("Water level 1->0. Time since 2->1: %d sec. t21=%llu, t10=%llu\n", last_pump_op_time_sec, ts_us_last_2to1, curr_ts_us);
     Serial.flush();
 #endif
+    if (notify_about_pump_op){
+      sendTelegramMessage("Pump op at : %s, took %d seconds.\n", get_current_time(), last_pump_op_time_sec);
+    }
   }
-
-  last_water_level = curr_water_level;
 
   // make watch dog happy, as this is a heavy task
   vTaskDelay(1);
     
-  // Alarm ?
-  if (curr_water_level >= 4) {
-    if (warning_mesg_sent) {
+  // Water Level Alarm ?
+  if (curr_water_level >= water_level_warn_threshold) {
+    if (water_lvl_warning_mesg_sent && (curr_water_level <= last_water_level)) {
       // warning message already sent, will not repeatly send
     } else {
-      warning_mesg_sent = sendTelegramMessage("WARNING : water level reached %d !!!", curr_water_level);
+      water_lvl_warning_mesg_sent = sendTelegramMessage("WARNING : water level reached %d !!!", curr_water_level);
+      vTaskDelay(1);
     }
     digitalWrite(WARN_PIN, HIGH);
   } else {
     // clear the warning flag, so new warning message will be sent when the level rise to critical again
-    warning_mesg_sent = false;
+    water_lvl_warning_mesg_sent = false;
     digitalWrite(WARN_PIN, LOW);
   }
+
+  // Pump Operation Time Alarm ?
+  if (last_pump_op_time_sec >= pump_op_time_threshold) {
+    if (pump_op_warning_mesg_sent) {
+      // warning message already sent, will not repeatly send
+    } else {
+      pump_op_warning_mesg_sent = sendTelegramMessage("WARNING : last pump operation took %d seconds!!!", last_pump_op_time_sec);
+      vTaskDelay(1);
+    }
+  } else {
+    // clear the warning flag, so new warning message will be sent when it happens again
+    pump_op_warning_mesg_sent = false;
+  }
+
+  last_water_level = curr_water_level;
 }
 
 
@@ -167,6 +191,59 @@ cmd_err_t state_command(int argc, char *argv[]){
                           (seconds_since_pump_op / 60) % 60,
                           seconds_since_pump_op % 60,
                           last_pump_op_time_sec);
+  }
+  return ERR_CMD_OK;
+}
+
+
+// Command function implementations
+cmd_err_t notify_pump_op_command(int argc, char *argv[]){
+  int v;
+  if (argc == 1){
+    console_printf("Notify about pump operation: %s\n", notify_about_pump_op ? "True" : "False");
+    return ERR_CMD_OK;  
+  }
+
+  if (argv[1][0] == '1'){
+    notify_about_pump_op = true;    
+  }else if (argv[1][0] == '0'){
+    notify_about_pump_op = false;
+  }else{
+    console_printf("%s <1|0>\n", argv[0]);
+    return ERR_BAD_ARG;
+  }
+  return ERR_CMD_OK;
+}
+
+
+// Command function implementations
+cmd_err_t water_level_threshold_command(int argc, char *argv[]){
+  int th;
+  if (argc == 1){
+    console_printf("Warn if water level >= %d\n", water_level_warn_threshold);
+    return ERR_CMD_OK;  
+  }
+  if ((sscanf(argv[1], "%d", &th) == 1) && (th >= 3) && (th <= 5)){
+    water_level_warn_threshold = th;
+  }else{
+    console_printf("%s <3|4|5>\n", argv[0]);
+    return ERR_BAD_ARG;
+  }
+  return ERR_CMD_OK;
+}
+
+
+cmd_err_t pump_op_time_threshold_command(int argc, char *argv[]){
+  int th;
+  if (argc == 1){
+    console_printf("Warn if pump operation time >= %d\n", pump_op_time_threshold);
+    return ERR_CMD_OK;  
+  }
+  if ((sscanf(argv[1], "%d", &th) == 1) && (th > 0)){
+    pump_op_time_threshold = th;
+  }else{
+    console_printf("%s <max pump op time in sec>\n", argv[0]);
+    return ERR_BAD_ARG;
   }
   return ERR_CMD_OK;
 }

@@ -54,6 +54,7 @@ void process_telegram_messages() {
       // pass the string to command console
       text.trim();
       text.toLowerCase();
+      text.replace('-', '_');
       console_parse_cmd(text.c_str());
       const char* cmd_output = get_command_output();
       if (strlen(cmd_output)){

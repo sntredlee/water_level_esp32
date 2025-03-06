@@ -78,6 +78,9 @@ cmd_err_t task_period_command(int argc, char *argv[]){
 static const command_t init_commands[] =
 {
     { "state",             state_command,        0, NULL, NULL, NULL,    "Get water level state"}, \    
+    { "notify_pump_op",    notify_pump_op_command, 0, NULL, NULL, NULL,  "notify_pump_op <1|0>" }, \
+    { "water_level_threshold", water_level_threshold_command, 0, NULL, NULL, NULL, "water_level_threshold <3|4|5>"},\
+    { "pump_op_time_threshold", pump_op_time_threshold_command, 0, NULL, NULL, NULL, "pump_op_time_threshold <time in seconds>"},\
     { "tasks",             show_tasks_command,   0, NULL, NULL, NULL,    "Show scheduled tasks"}, \
     { "task_period",       task_period_command,  2, NULL, NULL, NULL,    "task_period <task_id> <period in seconds>"}, \
     CMD_TABLE_END
