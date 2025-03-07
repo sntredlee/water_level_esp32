@@ -6,6 +6,7 @@
 #include "telegram.h"
 #include "sensor.h"
 #include "time_utils.h"
+#include "charge_controller.h"
 /*
   // run into problem when the code crash for unknown reason.
   // thought it was stack overflow but it wasn't.
@@ -75,14 +76,34 @@ cmd_err_t task_period_command(int argc, char *argv[]){
   return ERR_CMD_OK;
 }
 
+
+cmd_err_t low_power_mode_command(int argc, char *argv[]){
+  int v;
+  if (argc == 1){
+    console_printf("Low power mode = %d\n", sys_config.low_power_mode);
+    return ERR_CMD_OK;  
+  }
+  if ((sscanf(argv[1], "%d", &v) == 1)){
+    sys_config.low_power_mode = (v!=0);
+  }else{
+    console_printf("%s <1|0>\n", argv[0]);
+    return ERR_BAD_ARG;
+  }
+  return ERR_CMD_OK;
+}
+
+
+
 static const command_t init_commands[] =
 {
     { "state",             state_command,        0, NULL, NULL, NULL,    "Get water level state"}, \    
-    { "notify_pump_op",    notify_pump_op_command, 0, NULL, NULL, NULL,  "notify_pump_op <1|0>" }, \
-    { "water_level_threshold", water_level_threshold_command, 0, NULL, NULL, NULL, "water_level_threshold <3|4|5>"},\
-    { "pump_op_time_threshold", pump_op_time_threshold_command, 0, NULL, NULL, NULL, "pump_op_time_threshold <time in seconds>"},\
+    { "notify_pump_op",    notify_pump_op_command, 0, NULL, NULL, NULL,  "notify_pump_op [1|0]" }, \
+    { "water_level_threshold", water_level_threshold_command, 0, NULL, NULL, NULL, "water_level_threshold [3|4|5]"},\
+    { "pump_op_time_threshold", pump_op_time_threshold_command, 0, NULL, NULL, NULL, "pump_op_time_threshold [time in seconds]"},\
     { "tasks",             show_tasks_command,   0, NULL, NULL, NULL,    "Show scheduled tasks"}, \
     { "task_period",       task_period_command,  2, NULL, NULL, NULL,    "task_period <task_id> <period in seconds>"}, \
+    { "low_power_mode",    low_power_mode_command, 0, NULL, NULL, NULL,  "low_power_mode [1|0] "},\
+    { "battery",           battery_volt_command, 0, NULL, NULL, NULL, "battery state"}, \
     CMD_TABLE_END
 };
 
@@ -106,6 +127,8 @@ void setup() {
   init_telegram(sys_config.telegram_botToken, sys_config.telegram_chatID);
 
   init_sensor(sys_config.max_sec_between_logs);
+
+  config_charge_controller_addr(sys_config.charge_controller_ip, sys_config.charge_controller_port);
 
   // setup tasks
   Serial.printf("Adding task for water level check.\n\r");
@@ -158,25 +181,27 @@ void loop() {
   }
   digitalWrite(LED_PIN, LED_OFF);
 
-  // Prepare to go to sleep
-  uint64_t loop_cost_us = esp_timer_get_time() - ts_loop_start;
-#if DEBUG
-  Serial.print("Loop time (us): ");
-  Serial.println(loop_cost_us);
-  Serial.flush();
-#endif
-  if (loop_cost_us >= sys_config.loop_period_sec * 1000000) {
-    // This loop takes too long, no sleep, go to next loop immediately
-    // delay(1 ms) is called for the backend to do something.
-    delay(1);
-  } else {
-    // light sleep is more power efficient because we need to wake up frequently and the power cost of rebooting (150ms @ 200mA) is much more
-    turn_off_wifi();
-#if DEBUG
-    Serial.print("go to light sleep mode...");
+  if (1 == sys_config.low_power_mode){
+    // Prepare to go to sleep
+    uint64_t loop_cost_us = esp_timer_get_time() - ts_loop_start;
+  #if DEBUG
+    Serial.print("Loop time (us): ");
+    Serial.println(loop_cost_us);
     Serial.flush();
-#endif
-    esp_sleep_enable_timer_wakeup(sys_config.loop_period_sec * 1000000 - loop_cost_us);
-    esp_light_sleep_start();
+  #endif
+    if (loop_cost_us >= sys_config.loop_period_sec * 1000000) {
+      // This loop takes too long, no sleep, go to next loop immediately
+      // delay(1 ms) is called for the backend to do something.
+      delay(1);
+    } else {
+      // light sleep is more power efficient because we need to wake up frequently and the power cost of rebooting (150ms @ 200mA) is much more
+      turn_off_wifi();
+  #if DEBUG
+      Serial.print("go to light sleep mode...");
+      Serial.flush();
+  #endif
+      esp_sleep_enable_timer_wakeup(sys_config.loop_period_sec * 1000000 - loop_cost_us);
+      esp_light_sleep_start();
+    }
   }
 }

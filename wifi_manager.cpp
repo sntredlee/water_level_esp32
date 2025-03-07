@@ -9,6 +9,7 @@ static String password;
 
 
 bool is_wifi_on(){
+  _wifi_on = (WiFi.status() == WL_CONNECTED);
   return _wifi_on;
 }
 
@@ -22,16 +23,17 @@ bool turn_on_wifi() {
   // return true: wifi turned on successfully
   //        false: wifi turn on failed
 #if DEBUG
-  Serial.println("Connecting to WiFi...");
+  Serial.printf("Connecting to WiFi %s...\n\r", ssid.c_str());
   Serial.flush();
 #endif
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin();
+  WiFi.begin(ssid, password);
 
   unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 2000) {  // 2.0 timeout
-    delay(200);
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 5000) {  // 5.0 sec  timeout
+    delay(500);
+    vTaskDelay(1); // Not sure, put it here anyway
 #if DEBUG
     Serial.print(".");
     Serial.flush();

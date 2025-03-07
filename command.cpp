@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include <cstddef>
 #include <cstring>
 #include "command.h"
@@ -7,12 +8,14 @@
 static cmd_err_t help_command(int argc, char* argv[]);
 static cmd_err_t version_command(int argc, char *argv[]);
 static cmd_err_t uptime_command(int argc, char *argv[]);
+static cmd_err_t mac_addr_command(int argc, char *argv[]);
 
 #define MAX_NUM_COMMANDS 64
 static command_t console_command_table_array[MAX_NUM_COMMANDS+1] = {
   { "help",             help_command,        0, NULL, NULL, NULL,    "help [command name]"},
   { "version",          version_command,     0, NULL, NULL, NULL,    "get FW version"},
   { "uptime",           uptime_command,      0, NULL, NULL, NULL,    "running time since reboot"},
+  { "mac",              mac_addr_command,    0, NULL, NULL, NULL,    "print MAC address"},
   { NULL,               NULL,                0, NULL, NULL, NULL,    NULL}
 };
 
@@ -384,4 +387,11 @@ static cmd_err_t uptime_command(int argc, char *argv[])
                   t_sec % 60
                   );
   return ERR_CMD_OK;
+}
+
+
+
+cmd_err_t mac_addr_command(int argc, char *argv[]){
+  console_printf("MAC address: %s", WiFi.macAddress().c_str());
+  return ERR_CMD_OK;  
 }

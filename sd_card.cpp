@@ -34,7 +34,9 @@ config_t readConfigFile() {
     String line = file.readStringUntil('\n');  // Read a line from file
     line.trim();                               // Remove whitespace and newline characters
 
-    if (line.startsWith("loop_period_sec:")) {
+    if (line.startsWith("low_power_mode:")) { 
+      sys_config.low_power_mode = line.substring(line.indexOf(":") + 1).toInt();
+    } else if (line.startsWith("loop_period_sec:")) {
       sys_config.loop_period_sec = line.substring(line.indexOf(":") + 1).toInt();
     } else if (line.startsWith("max_sec_between_logs:")) {
       sys_config.max_sec_between_logs = line.substring(line.indexOf(":") + 1).toInt();
@@ -48,6 +50,10 @@ config_t readConfigFile() {
       sys_config.telegram_botToken = line.substring(line.indexOf(":") + 1);
     } else if (line.startsWith("telegram_chatID:")) {
       sys_config.telegram_chatID = line.substring(line.indexOf(":") + 1);
+    } else if (line.startsWith("charge_controller_ip")) {
+      sys_config.charge_controller_ip = line.substring(line.indexOf(":") + 1);
+    } else if (line.startsWith("charge_controller_port")) {
+      sys_config.charge_controller_port = line.substring(line.indexOf(":") + 1).toInt();
     }
   }
 
@@ -63,6 +69,8 @@ config_t readConfigFile() {
   Serial.printf("  Telegram bot token: %s\n", sys_config.telegram_botToken.c_str());
   Serial.printf("  Telegram chat ID: %s\n", sys_config.telegram_chatID.c_str());
   Serial.flush();
+  Serial.printf("  Charge controller IP addr: %s\n", sys_config.charge_controller_ip.c_str());
+  Serial.printf("  Charge controller Port: %d\n", sys_config.charge_controller_port);
 
   return sys_config;
 }
