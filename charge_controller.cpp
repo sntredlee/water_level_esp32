@@ -42,8 +42,19 @@ cmd_err_t battery_volt_command(int argc, char *argv[]){
       Serial.printf("Received %d bytes response from charge controller.\n\r", i);
       Serial.flush();
 #endif    
-      uint8_t voltage = data_rx[8];  // voltage x 10
-      console_printf("Battery Voltage: %d.%d V", voltage / 10, voltage % 10);
+      uint16_t batt_voltage = (data_rx[7] << 8) + data_rx[8];  // battery voltage x 10
+      uint16_t solar_voltage = (data_rx[9] << 8) + data_rx[10];  // solar voltage x 10
+      uint16_t wind_voltage = (data_rx[11] << 8) + data_rx[12];  // wind voltage x 10
+      uint16_t solar_amp = (data_rx[13] << 8) + data_rx[14];  // solar charge current x 10
+      uint16_t wind_amp = (data_rx[15] << 8) + data_rx[16];   // solar charge current x 10
+      uint16_t solar_w = (data_rx[17] << 8) + data_rx[18];
+      uint16_t wind_w = (data_rx[19] << 8) + data_rx[20];
+      uint8_t batt_percent = data_rx[50];
+
+      console_printf("Battery: %d.%d V (%d percent)\nSolar: %2d.%dV %2d.%dA %3dW\nWind: %2d.%dV %2d.%dA %3dW", \
+                    batt_voltage / 10, batt_voltage % 10, batt_percent, \
+                    solar_voltage / 10, solar_voltage % 10, solar_amp / 10, solar_amp % 10, solar_w, \
+                    wind_voltage / 10, wind_voltage % 10, wind_amp / 10, wind_amp % 10, wind_w);
 
       // Close connection
       client.stop();
